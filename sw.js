@@ -1,7 +1,7 @@
-self.options = {
-    "domain": "5gvci.com",
-    "zoneId": 12001803
-}
-
-self.lary = ""
-importScripts('https://5gvci.com/act/files/service-worker.min.js?r=sw')
+// Fans-Zone service worker. No ad, push-notification, or redirect scripts are loaded here.
+self.addEventListener("install", event => {
+  self.skipWaiting();
+});
+self.addEventListener("activate", event => {
+  event.waitUntil(self.clients.claim());
+});

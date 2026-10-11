@@ -53,4 +53,54 @@ tabs.forEach(t=>t.addEventListener("click",()=>{tabs.forEach(x=>x.classList.togg
 async function loadScores(){statusEl.textContent="Fetching current sports schedules and scores…";const results=await Promise.allSettled(SPORTS.map(async s=>{const res=await fetch('https://site.api.espn.com/apis/site/v2/sports/'+s.path+'/'+s.league+'/scoreboard',{cache:"no-store"});if(!res.ok)throw new Error(s.league+" feed unavailable");const data=await res.json();return (data.events||[]).map(e=>({...e,_sport:s.name,_emoji:s.emoji}))}));events=results.flatMap(r=>r.status==="fulfilled"?r.value:[]);events.sort((a,b)=>new Date(a.date)-new Date(b.date));if(!events.length){statusEl.textContent="Live scoreboard unavailable right now.";list.innerHTML='<article class="game"><b>Live scores are temporarily unavailable.</b><p>Fans-Zone will not substitute made-up games or scores.</p><button class="secondary" id="retryScores">Try again</button></article>';document.getElementById("retryScores")?.addEventListener("click",loadScores);renderPicks();return}render();renderPicks()}
 document.getElementById("viewPicks").addEventListener("click",()=>{document.getElementById("leaderboard").scrollIntoView({behavior:"smooth",block:"start"});notify(Object.keys(picks).length+" pick(s) saved on this device.")});
 document.querySelectorAll("[data-vote]").forEach(b=>b.addEventListener("click",()=>{try{localStorage.setItem("fansZoneMyVote",b.dataset.vote)}catch{}document.querySelectorAll("[data-vote]").forEach(x=>x.classList.toggle("selected",x===b));document.getElementById("pollResults").textContent="Your local vote: "+(b.dataset.vote==="home"?"Home team":"Away team")+". Public vote totals are not available yet.";notify("Fan poll vote saved on this device.")}));function renderSuggestions(){let a=[];try{a=JSON.parse(localStorage.getItem("fansZoneSuggestions")||"[]")}catch{}document.getElementById("suggestionsList").innerHTML=a.length?'<p class="small-note">Your saved suggestions</p>'+a.slice(-5).reverse().map(s=>'<div class="leader"><span class="avatar">★</span><span class="person">'+esc(s.teams)+'<small>'+esc(s.sport)+' · saved on this device</small></span></div>').join(""):""}document.getElementById("suggestForm").addEventListener("submit",e=>{e.preventDefault();let a=[];try{a=JSON.parse(localStorage.getItem("fansZoneSuggestions")||"[]")}catch{}a.push({sport:document.getElementById("suggestSport").value,teams:document.getElementById("suggestTeams").value.trim()});try{localStorage.setItem("fansZoneSuggestions",JSON.stringify(a))}catch{}document.getElementById("suggestTeams").value="";renderSuggestions();notify("Suggestion saved on this device.")});renderSuggestions();if(localStorage.getItem("fansZoneMyVote")){document.getElementById("pollResults").textContent="Your local vote: "+(localStorage.getItem("fansZoneMyVote")==="home"?"Home team":"Away team")+". Public vote totals are not available yet.";document.querySelectorAll("[data-vote]").forEach(b=>b.classList.toggle("selected",b.dataset.vote===localStorage.getItem("fansZoneMyVote")))}document.getElementById("year").textContent=new Date().getFullYear();loadScores();setInterval(loadScores,120000);
+
+/* Interactive hub filters and game center details */
+document.querySelectorAll("[data-hub]").forEach(btn=>btn.addEventListener("click",()=>{
+ hubFilter=btn.dataset.hub;
+ activeFilter=["Football","Basketball","Baseball","Hockey","Soccer"].includes(hubFilter)?hubFilter:"all";
+ document.querySelectorAll("[data-hub]").forEach(x=>x.classList.toggle("active",x===btn));
+ tabs.forEach(t=>t.classList.toggle("active",t.dataset.filter===activeFilter));
+ if(hubFilter==="picks") document.getElementById("games").scrollIntoView({behavior:"smooth",block:"start"});
+ render();
+}));
+function openMatchup(id){
+ const e=events.find(x=>x.id===id); if(!e)return;
+ modalId=id;
+ const cs=e.competitions?.[0]?.competitors||[];
+ const away=cs.find(c=>c.homeAway==="away")||cs[0]||{};
+ const home=cs.find(c=>c.homeAway==="home")||cs[1]||{};
+ const sides=[away,home];
+ const names=sides.map(c=>c.team?.displayName||c.team?.name||"Team");
+ const live=e.status?.type?.state==="in";
+ document.getElementById("modalLeague").textContent=(e._sport||"SPORT")+" · GAME CENTER";
+ document.getElementById("modalTitle").textContent=e.name||names.join(" vs ");
+ document.getElementById("modalTeams").innerHTML=sides.map((c,i)=>{
+  const t=c.team||{},logo=safeLogo(t),abbr=t.abbreviation||names[i].slice(0,3).toUpperCase();
+  return '<div class="modal-team">'+(logo?'<img src="'+esc(logo)+'" alt="'+esc(names[i])+' logo">':'<div style="font-size:28px;font-weight:1000;margin:25px 0">'+esc(abbr)+'</div>')+'<b>'+esc(names[i])+'</b><small>'+esc(abbr)+'</small></div>'+(i===0?'<div class="modal-score">'+esc(c.score??"–")+' <small>'+esc(live?"LIVE":"SCORE")+'</small></div>':'');
+ }).join("");
+ const date=e.date?new Date(e.date):null;
+ const facts=[["Game status",eventState(e)],["Start time",date?date.toLocaleString([],{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}):"Schedule pending"],["League",e.competitions?.[0]?.name||e._sport||"Sports"]];
+ document.getElementById("modalFacts").innerHTML=facts.map(([k,v])=>'<div class="modal-fact"><span>'+esc(k)+'</span><b>'+esc(v)+'</b></div>').join("");
+ document.getElementById("modalPickA").textContent=(picks[id]===names[0]?"✓ Picked: ":"Pick ")+names[0];
+ document.getElementById("modalPickB").textContent=(picks[id]===names[1]?"✓ Picked: ":"Pick ")+names[1];
+ document.getElementById("gameModal").classList.add("open");document.body.style.overflow="hidden";
+}
+function closeMatchup(){document.getElementById("gameModal").classList.remove("open");document.body.style.overflow="";modalId=null}
+document.getElementById("modalClose").addEventListener("click",closeMatchup);
+document.getElementById("gameModal").addEventListener("click",e=>{if(e.target.id==="gameModal")closeMatchup()});
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeMatchup()});
+document.getElementById("gamesList").addEventListener("click",e=>{const b=e.target.closest("[data-detail]");if(b)openMatchup(b.dataset.detail)});
+function pickFromModal(sideIndex){
+ const e=events.find(x=>x.id===modalId);if(!e)return;
+ const cs=e.competitions?.[0]?.competitors||[];
+ const away=cs.find(c=>c.homeAway==="away")||cs[0]||{};
+ const home=cs.find(c=>c.homeAway==="home")||cs[1]||{};
+ const teamObj=[away,home][sideIndex]||{};
+ picks[modalId]=teamObj.team?.displayName||teamObj.team?.name||"Team";
+ try{localStorage.setItem("fansZonePicks",JSON.stringify(picks))}catch{}
+ render();renderPicks();const id=modalId;openMatchup(id);notify("Fan pick saved on this device.");
+}
+document.getElementById("modalPickA").addEventListener("click",()=>pickFromModal(0));
+document.getElementById("modalPickB").addEventListener("click",()=>pickFromModal(1));
+
 </script></body></html>
